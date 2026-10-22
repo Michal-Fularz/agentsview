@@ -11,8 +11,6 @@ The latest release is
 
 - Telemetry now honors `DO_NOT_TRACK` and stays off in CI and non-release
   builds.
-- `pg push` saves download traffic when a session grows by comparing short
-  hashes with PostgreSQL instead of downloading the session's old text.
 
 - `--fts`, terms, and hybrid message search no longer match command, path, and reasoning text.
 
@@ -43,6 +41,9 @@ The latest release is
   the schema with `uninventoried relation raw_message_dialogue`.
   Artifact transport is a separate follow-up;
   semantic search continues to use rendered messages.
+
+- `pg push` saves download traffic when a session grows by comparing short
+  hashes with PostgreSQL instead of downloading the session's old text.
 
 **Upgrade notes**
 
