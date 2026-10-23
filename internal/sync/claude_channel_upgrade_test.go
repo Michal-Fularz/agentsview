@@ -27,6 +27,7 @@ func TestClaudeChannelUpgradeKeepsRetryCuration(t *testing.T) {
 			name: "linear", fixture: "channel_messages.jsonl", pinIndex: 3, messageCount: 4,
 			seedSQL: `DELETE FROM messages WHERE session_id = 'linear' AND ordinal = 2;
 				UPDATE messages SET ordinal = 2 WHERE session_id = 'linear' AND ordinal = 3;
+				UPDATE pinned_messages SET ordinal = 2 WHERE session_id = 'linear';
 				UPDATE sessions SET message_count = 3, user_message_count = 1 WHERE id = 'linear'`,
 		},
 	} {
@@ -58,6 +59,15 @@ func TestClaudeChannelUpgradeKeepsRetryCuration(t *testing.T) {
 			require.NoError(t, err)
 			_, err = raw.ExecContext(ctx, tt.seedSQL)
 			require.NoError(t, err)
+			if tt.name == "linear" {
+				var pinOrdinal, messageOrdinal int
+				err = raw.QueryRowContext(ctx, `SELECT p.ordinal, m.ordinal
+					FROM pinned_messages p JOIN messages m ON m.id = p.message_id
+					WHERE p.session_id = 'linear'`).Scan(&pinOrdinal, &messageOrdinal)
+				require.NoError(t, err)
+				require.Equal(t, 2, pinOrdinal)
+				require.Equal(t, 2, messageOrdinal)
+			}
 			_, err = raw.ExecContext(ctx, "UPDATE sessions SET data_version = 144; PRAGMA user_version = 144")
 			require.NoError(t, err)
 			require.NoError(t, raw.Close())
@@ -83,6 +93,10 @@ func TestClaudeChannelUpgradeKeepsRetryCuration(t *testing.T) {
 			require.Len(t, pins, 1)
 			assert.Equal(t, before[tt.pinIndex].ID, pins[0].MessageID)
 			assert.Equal(t, new("saved message"), pins[0].Note)
+			if tt.name == "linear" {
+				assert.Equal(t, 3, pins[0].Ordinal)
+				assert.Equal(t, after[3].ID, pins[0].MessageID)
+			}
 		})
 	}
 }
