@@ -140,7 +140,10 @@ rm -rf "$tmp_root"
     printf '%s\n' "$*" >> "$tmp_root/npm.log"
     case "$*" in
       ci) ;;
-      'run build') printf 'local page' > "$REPO_ROOT/frontend/dist/index.html" ;;
+      'run build')
+        mkdir -p "$REPO_ROOT/frontend/dist"
+        printf 'local page' > "$REPO_ROOT/frontend/dist/index.html"
+        ;;
       *) return 1 ;;
     esac
   }
@@ -151,10 +154,14 @@ rm -rf "$tmp_root"
   assert_eq "$([ -e "$tmp_root/npm.log" ] && echo called || echo skipped)" "skipped" "prebuilt skips npm"
   assert_eq "$([ -e "$REPO_ROOT/internal/web/dist/stale.js" ] && echo present || echo removed)" "removed" "replace stale assets"
 
+  rm -rf "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
+  mkdir -p "$REPO_ROOT/internal/web/dist"
+  printf 'stale' > "$REPO_ROOT/internal/web/dist/stale.js"
   unset AGENTSVIEW_FRONTEND_PREBUILT
   prepare_frontend
   assert_eq "$(cat "$tmp_root/npm.log")" $'ci\nrun build' "local install precedes build"
   assert_eq "$(cat "$REPO_ROOT/internal/web/dist/index.html")" "local page" "copy local build"
+  assert_eq "$([ -e "$REPO_ROOT/internal/web/dist/stale.js" ] && echo present || echo removed)" "removed" "replace stale local assets"
 )
 
 echo "prepare-sidecar target mapping checks passed"
