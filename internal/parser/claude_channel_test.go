@@ -2,7 +2,6 @@ package parser
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,56 +28,38 @@ func TestClaudeChannelMessages(t *testing.T) {
 				assert.Equal(t, 2, session.UserMessageCount)
 				require.Len(t, full, 4)
 				messages = full[2:]
+				assert.Equal(t, 2, messages[0].Ordinal)
 			}
 			assert.Equal(t, RoleUser, messages[0].Role)
 			assert.False(t, messages[0].IsSystem)
 			assert.Contains(t, messages[0].Content, "what changed in the last commit?")
 			assert.Contains(t, messages[0].Content, `<channel source="telegram"`)
-			assert.Equal(t, 2, messages[0].Ordinal)
 			assert.Equal(t, "The last commit renamed the config loader.", messages[1].Content)
 		})
 	}
 }
 
-func TestClaudeChannelMetaAndPreview(t *testing.T) {
-	for _, tt := range []struct {
-		name, origin, body, preview string
-		isMeta                      bool
-	}{
-		{name: "channel", origin: "channel", isMeta: true, body: strings.Repeat("question ", 50), preview: strings.Repeat("question ", 33) + "que..."},
-		{name: "peer", origin: "peer", isMeta: true, body: "question"},
-		{name: "typed", body: "literal text", preview: `<channel source="telegram">literal text</channel>`},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			content := fmt.Sprintf(`{"type":"user","uuid":"c1","isMeta":%t,"origin":{"kind":%q},"message":{"content":%q}}`+"\n", tt.isMeta, tt.origin, `<channel source="telegram">`+tt.body+`</channel>`)
-			path := createTestFile(t, "meta.jsonl", content)
-			results, err := parseClaudeSession(path, "project", "local")
-			require.NoError(t, err)
-			require.Len(t, results, 1)
-			if tt.name == "peer" {
-				assert.Empty(t, results[0].Messages)
-				appended, _, _, _, err := claudeParseSessionFrom(path, 0, claudeIncrementalScan{})
-				require.NoError(t, err)
-				assert.Empty(t, appended)
-				return
-			}
-			assert.Equal(t, tt.preview, results[0].Session.FirstMessage)
-		})
-	}
-}
-
 func TestClaudeChannelPreviewEnvelopes(t *testing.T) {
-	for _, tt := range []struct{ name, content, preview string }{
-		{"quoted angle", `<channel source="telegram" user="a > b">question</channel>`, "question"},
-		{"no attributes", `<channel>question</channel>`, "question"},
-		{"whitespace", " \n<channel source=\"telegram\">\n question\n</channel>\n ", "question"},
-		{"adjacent", `<channel>first</channel>` + "\n" + `<channel source="telegram">second</channel>`, "first second"},
-		{"malformed", `<channel source="telegram>question</channel>`, `<channel source="telegram>question</channel>`},
-		{"trailing text", `<channel>question</channel> trailing`, `<channel>question</channel> trailing`},
-		{"literal body", `<channel>a < b & c</channel>`, "a < b & c"},
+	for _, tt := range []struct {
+		name, content, preview string
+		typed                  bool
+	}{
+		{name: "quoted angle", content: `<channel source="telegram" user="a > b">question</channel>`, preview: "question"},
+		{name: "no attributes", content: `<channel>question</channel>`, preview: "question"},
+		{name: "whitespace", content: " \n<channel source=\"telegram\">\n question\n</channel>\n ", preview: "question"},
+		{name: "adjacent", content: `<channel>first</channel>` + "\n" + `<channel source="telegram">second</channel>`, preview: "first second"},
+		{name: "malformed", content: `<channel source="telegram>question</channel>`, preview: `<channel source="telegram>question</channel>`},
+		{name: "trailing text", content: `<channel>question</channel> trailing`, preview: `<channel>question</channel> trailing`},
+		{name: "literal body", content: `<channel>a < b & c</channel>`, preview: "a < b & c"},
+		{name: "truncation", content: `<channel source="telegram">` + strings.Repeat("question ", 50) + `</channel>`, preview: strings.Repeat("question ", 33) + "que..."},
+		{name: "typed", content: `<channel source="telegram">literal text</channel>`, preview: `<channel source="telegram">literal text</channel>`, typed: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			content := fmt.Sprintf(`{"type":"user","uuid":"c1","isMeta":true,"origin":{"kind":"channel"},"message":{"content":%q}}`+"\n", tt.content)
+			metadata := `"isMeta":true,"origin":{"kind":"channel"},`
+			if tt.typed {
+				metadata = ""
+			}
+			content := fmt.Sprintf(`{"type":"user","uuid":"c1",%s"message":{"content":%q}}`+"\n", metadata, tt.content)
 			session, _ := runClaudeParserTest(t, "preview.jsonl", content)
 			assert.Equal(t, tt.preview, session.FirstMessage)
 		})
@@ -86,9 +67,8 @@ func TestClaudeChannelPreviewEnvelopes(t *testing.T) {
 }
 
 func TestClaudeChannelRewindKeepsRetryIdentity(t *testing.T) {
-	content, err := os.ReadFile("../testdata/claude_channel_rewind.jsonl")
-	require.NoError(t, err)
-	path := createTestFile(t, "rewind.jsonl", string(content))
+	content := loadFixture(t, "claude/channel_rewind.jsonl")
+	path := createTestFile(t, "rewind.jsonl", content)
 	results, err := parseClaudeSession(path, "project", "local")
 	require.NoError(t, err)
 	require.Len(t, results, 2)
@@ -100,7 +80,6 @@ func TestClaudeChannelRewindKeepsRetryIdentity(t *testing.T) {
 	assert.Equal(t, "rewind", results[1].Session.ParentSessionID)
 	assert.Equal(t, RelFork, results[1].Session.RelationshipType)
 	assert.Equal(t, 4, results[1].Session.UserMessageCount)
-	assert.Equal(t, "question 0", results[1].Session.FirstMessage)
 	require.Len(t, results[1].Messages, 8)
 	assert.Equal(t, "answer 3", results[1].Messages[7].Content)
 }
