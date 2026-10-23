@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 func TestClaudeChannelMessages(t *testing.T) {
 	content := loadFixture(t, "claude/channel_messages.jsonl")
 	for _, incremental := range []bool{false, true} {
-		t.Run(fmt.Sprint(incremental), func(t *testing.T) {
+		t.Run(strconv.FormatBool(incremental), func(t *testing.T) {
 			var messages []ParsedMessage
 			if incremental {
 				path := createTestFile(t, "channel.jsonl", content)
