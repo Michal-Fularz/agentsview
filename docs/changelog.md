@@ -7,6 +7,15 @@ description: Release history for AgentsView
 The latest release is
 [0.46.1](https://github.com/kenn-io/agentsview/releases/tag/v0.46.1).
 
+## Unreleased
+
+**Bug fixes**
+
+- Claude Code channel questions appear in transcripts, search, and user-message
+  totals. Rewinding after a channel conversation keeps that conversation as a
+  separate fork and preserves the retry's session ID and saved items. Existing
+  Claude-format sources are reprocessed on upgrade.
+
 ## 0.46.1
 
 <small>2026-10-22</small>

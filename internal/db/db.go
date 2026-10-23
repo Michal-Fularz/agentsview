@@ -602,7 +602,8 @@ CREATE INDEX IF NOT EXISTS idx_provider_freshness_updated_at
 // turn when the SQLite decode missed it. Re-parse unchanged antigravity-cli
 // sources in place; source and session identities are unchanged.)
 // (144: reconcile Hermes and Augure Desktop model usage in place.)
-const dataVersion = 144
+// (145: restore Claude-format channel messages in place, retaining retry identities.)
+const dataVersion = 145
 
 const archiveOnlyVersionBase = 1 << 20
 

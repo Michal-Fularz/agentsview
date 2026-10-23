@@ -140,6 +140,13 @@ evidence; they do not establish whether a tool helped the task.
 
 ## Claude Code (`claude`)
 
+- **Channel messages (2026-10-23):** Reverified against the synthetic Claude
+  Code 2.1.305 Telegram transcript in
+  [#2400](https://github.com/kenn-io/agentsview/issues/2400), kept in
+  `internal/parser/testdata/claude/channel_messages.jsonl`. Inbound channel
+  questions are `user` entries with `isMeta: true` and `origin.kind: channel`.
+  They remain user turns; other `isMeta` entries stay hidden. Transcript text
+  retains the `<channel>` envelope, while session previews show its body.
 - **Dialogue projection:** Reverified 2026-10-17 against the shared block parser
   and ingest fixtures. Text blocks retain literal thinking and tool markers;
   separate thinking blocks remain available as reasoning. Cowork, iCodeMate

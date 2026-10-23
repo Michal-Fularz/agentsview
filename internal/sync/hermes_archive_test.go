@@ -2413,9 +2413,9 @@ func execHermesState(t *testing.T, stateDB, statement string) {
 }
 
 func TestHermesLedgerResyncReplacesUsageAndPreservesIdentity(t *testing.T) {
-	previousVersion := db.CurrentDataVersion() - 1
 	for _, agent := range []parser.AgentType{parser.AgentHermes, parser.AgentAugureDesktop} {
 		t.Run(string(agent), func(t *testing.T) {
+			previousVersion := db.AgentDataVersion(agent) - 1
 			root := t.TempDir()
 			stateDB := writeHermesArchiveStateDB(t, root)
 			conn, err := sql.Open("sqlite3", stateDB)
