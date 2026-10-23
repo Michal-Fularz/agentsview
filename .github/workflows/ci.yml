@@ -901,12 +901,15 @@ jobs:
         timeout-minutes: 10
         run: |
           version=$(node -p 'require("./node_modules/@playwright/test/package.json").version')
-          docker run -d --rm --init --ipc=host --network host \
+          cid=$(docker run -d --init --ipc=host --network host \
             -v "$PWD:$PWD:ro" -w "$PWD" \
             "mcr.microsoft.com/playwright:v$version-noble" \
             node node_modules/@playwright/test/cli.js run-server \
-            --port 3000 --host 127.0.0.1 --unsafe
-          until curl -s http://127.0.0.1:3000/; do sleep 1; done
+            --port 3000 --host 127.0.0.1 --unsafe)
+          until curl -s http://127.0.0.1:3000/; do
+            [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ] || { docker logs "$cid"; exit 1; }
+            sleep 1
+          done
         working-directory: frontend
 
       - name: Run E2E tests
