@@ -102,6 +102,7 @@ runs:
     - name: Build desktop bundle
       shell: bash
       env:
+        AGENTSVIEW_FRONTEND_PREBUILT: ${{ inputs.frontend_prebuilt }}
         AGENTSVIEW_SIDECAR_TRIMPATH: ${{ github.event_name != 'pull_request' }}
         AGENTSVIEW_TARGET_TRIPLE: ${{ inputs.target_triple }}
         ARTIFACT_DIR: ${{ inputs.artifact_dir }}

@@ -52,8 +52,6 @@ jobs:
     name: Desktop Build (${{ matrix.name }})
     needs: frontend
     runs-on: ${{ matrix.os }}
-    env:
-      AGENTSVIEW_FRONTEND_DIST: ${{ github.workspace }}/frontend/dist
     strategy:
       fail-fast: false
       matrix:

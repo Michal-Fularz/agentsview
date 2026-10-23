@@ -132,8 +132,8 @@ install_frontend_deps() {
 }
 
 prepare_frontend() {
-  local dist="${AGENTSVIEW_FRONTEND_DIST:-}"
-  if [ -n "$dist" ]; then
+  local dist="$REPO_ROOT/frontend/dist"
+  if [ "${AGENTSVIEW_FRONTEND_PREBUILT:-false}" = "true" ]; then
     if [ ! -f "$dist/index.html" ]; then
       echo "error: prebuilt frontend is missing index.html: $dist" >&2
       return 1
@@ -144,7 +144,6 @@ prepare_frontend() {
       install_frontend_deps
       npm run build
     )
-    dist="$REPO_ROOT/frontend/dist"
   fi
 
   rm -rf "$REPO_ROOT/internal/web/dist"
