@@ -131,6 +131,26 @@ install_frontend_deps() {
   npm ci
 }
 
+prepare_frontend() {
+  local dist="${AGENTSVIEW_FRONTEND_DIST:-}"
+  if [ -n "$dist" ]; then
+    if [ ! -f "$dist/index.html" ]; then
+      echo "error: prebuilt frontend is missing index.html: $dist" >&2
+      return 1
+    fi
+  else
+    (
+      cd "$REPO_ROOT/frontend"
+      install_frontend_deps
+      npm run build
+    )
+    dist="$REPO_ROOT/frontend/dist"
+  fi
+
+  rm -rf "$REPO_ROOT/internal/web/dist"
+  cp -r "$dist" "$REPO_ROOT/internal/web/dist"
+}
+
 main() {
   local target_triple go_target goos goarch ext host_triple
   target_triple="$(resolve_target_triple)"
@@ -147,14 +167,7 @@ main() {
     echo "warning: cross-target sidecar build requested from host $host_triple" >&2
   fi
 
-  (
-    cd "$REPO_ROOT/frontend"
-    install_frontend_deps
-    npm run build
-  )
-
-  rm -rf "$REPO_ROOT/internal/web/dist"
-  cp -r "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist"
+  prepare_frontend
 
   ext=""
   if [[ "$target_triple" == *"windows"* ]]; then

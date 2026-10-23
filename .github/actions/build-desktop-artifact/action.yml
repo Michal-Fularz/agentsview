@@ -14,6 +14,10 @@ inputs:
   artifact_dir:
     description: Bundle output directory
     required: true
+  frontend_prebuilt:
+    description: Use frontend assets supplied by the caller
+    required: false
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -36,7 +40,7 @@ runs:
         cache: npm
         cache-dependency-path: |
           desktop/package-lock.json
-          frontend/package-lock.json
+          ${{ inputs.frontend_prebuilt != 'true' && 'frontend/package-lock.json' || '' }}
 
     - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
       id: rust-toolchain

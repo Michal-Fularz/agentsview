@@ -127,4 +127,39 @@ echo "$output" | grep -q "Skipping" || {
 TAURI_DIR="$saved_tauri_dir"
 rm -rf "$tmp_root"
 
+(
+  tmp_root="$(mktemp -d)"
+  trap 'rm -rf "$tmp_root"' EXIT
+  REPO_ROOT="$tmp_root/repo"
+  mkdir -p "$REPO_ROOT/frontend/dist" "$REPO_ROOT/internal/web/dist" "$tmp_root/prebuilt/assets"
+  printf 'prebuilt page' > "$tmp_root/prebuilt/index.html"
+  printf 'prebuilt asset' > "$tmp_root/prebuilt/assets/app.js"
+  printf 'stale' > "$REPO_ROOT/internal/web/dist/stale.js"
+  # shellcheck disable=SC2329 # Called by prepare_frontend through the npm boundary.
+  npm() {
+    assert_eq "$PWD" "$REPO_ROOT/frontend" "npm runs in frontend"
+    printf '%s\n' "$*" >> "$tmp_root/npm.log"
+    case "$*" in
+      ci) ;;
+      'run build') printf 'local page' > "$REPO_ROOT/frontend/dist/index.html" ;;
+      *) return 1 ;;
+    esac
+  }
+
+  AGENTSVIEW_FRONTEND_DIST="$tmp_root/prebuilt" prepare_frontend
+  assert_eq "$(cat "$REPO_ROOT/internal/web/dist/index.html")" "prebuilt page" "copy prebuilt page"
+  assert_eq "$(cat "$REPO_ROOT/internal/web/dist/assets/app.js")" "prebuilt asset" "copy nested prebuilt assets"
+  assert_eq "$([ -e "$tmp_root/npm.log" ] && echo called || echo skipped)" "skipped" "prebuilt skips npm"
+  assert_eq "$([ -e "$REPO_ROOT/internal/web/dist/stale.js" ] && echo present || echo removed)" "removed" "replace stale assets"
+
+  mkdir -p "$tmp_root/missing"
+  AGENTSVIEW_FRONTEND_DIST="$tmp_root/missing" assert_fails "missing prebuilt index rejected" prepare_frontend
+  assert_eq "$(cat "$REPO_ROOT/internal/web/dist/index.html")" "prebuilt page" "missing assets preserve embedded frontend"
+
+  unset AGENTSVIEW_FRONTEND_DIST
+  prepare_frontend
+  assert_eq "$(cat "$tmp_root/npm.log")" $'ci\nrun build' "local install precedes build"
+  assert_eq "$(cat "$REPO_ROOT/internal/web/dist/index.html")" "local page" "copy local build"
+)
+
 echo "prepare-sidecar target mapping checks passed"
