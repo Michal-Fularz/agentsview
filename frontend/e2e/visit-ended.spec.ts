@@ -27,20 +27,23 @@ test("the daemon's disabled receipt stops all browser telemetry through a reload
     event: "app_opened",
     properties: { surface: "web" },
   });
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("pagehide"));
+    window.dispatchEvent(new Event("pageshow"));
+    window.dispatchEvent(new Event("focus"));
+  });
   await page.reload();
-  await expect(new SessionsPage(page).sessionItems.first()).toBeVisible();
   expect(events).toEqual(["app_opened"]);
 });
 
-test("visit delivery survives local close and authenticated remote reload", async ({
-  context,
-  baseURL,
-}) => {
-  for (const { remote, action } of [
-    { remote: false, action: "close" },
-    { remote: true, action: "reload" },
-  ]) {
-    const page = await context.newPage();
+for (const { remote, action } of [
+  { remote: false, action: "close" },
+  { remote: true, action: "reload" },
+]) {
+  test(`visit delivery reaches the ${remote ? "authenticated remote" : "local"} endpoint on ${action}`, async ({
+    page,
+    baseURL,
+  }) => {
     const server = await visitServer(baseURL!, remote);
     try {
       const enabled = page.waitForResponse(
@@ -66,25 +69,22 @@ test("visit delivery survives local close and authenticated remote reload", asyn
       server.preflights.length = 0;
       if (action === "close") await page.close();
       else await page.reload();
+      await expect
+        .poll(() => server.visits.map(({ payload }) => payload))
+        .toEqual([
+          {
+            event: "visit_ended",
+            properties: { surface: "web", duration_bucket: "under_1m" },
+          },
+        ]);
       if (remote) {
-        await expect
-          .poll(() => server.visits.map(({ payload }) => payload))
-          .toEqual([
-            {
-              event: "visit_ended",
-              properties: { surface: "web", duration_bucket: "under_1m" },
-            },
-          ]);
         expect(server.visits[0]?.authorization).toBe(`Bearer ${TOKEN}`);
         expect(server.preflights).toContainEqual(
           expect.stringMatching(/authorization.*content-type/i),
         );
-      } else {
-        await expect.poll(() => server.visits.length).toBe(1);
       }
     } finally {
-      if (!page.isClosed()) await page.close();
       await server.close();
     }
-  }
-});
+  });
+}

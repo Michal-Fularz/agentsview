@@ -902,9 +902,14 @@ jobs:
         timeout-minutes: 10
         run: |
           version=$(node -p 'require("./node_modules/@playwright/test/package.json").version')
+          image="mcr.microsoft.com/playwright:v$version-noble"
+          if ! docker pull "$image"; then
+            echo "::error::Could not pull $image. Microsoft may not have published the image for this @playwright/test version yet."
+            exit 1
+          fi
           cid=$(docker run -d --name playwright-browser-server --init --ipc=host --network host \
             -v "$PWD:$PWD:ro" -w "$PWD" \
-            "mcr.microsoft.com/playwright:v$version-noble" \
+            "$image" \
             node node_modules/@playwright/test/cli.js run-server \
             --port 3000 --host 127.0.0.1 --unsafe)
           until curl -s http://127.0.0.1:3000/; do
