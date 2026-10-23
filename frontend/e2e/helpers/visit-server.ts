@@ -24,7 +24,8 @@ export async function visitServer(upstream: string, authenticated = false, backC
       res.end("<!doctype html><title>Away</title>");
       return;
     }
-    // A finite event response lets the browser cache the page between visits.
+    // Production holds this event stream open. A bare 204 makes this fixture
+    // eligible for bfcache so the test can exercise restoration.
     if (backCache && req.url === "/api/v1/events") {
       res.writeHead(204).end();
       return;
