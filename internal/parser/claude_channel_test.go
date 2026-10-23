@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,16 +67,28 @@ func TestClaudeChannelMetaAndPreview(t *testing.T) {
 	}
 }
 
-func TestClaudeChannelRewindKeepsRetryIdentity(t *testing.T) {
-	// One typed turn and four channel turns used to be discarded as a retry.
-	lines := []string{`{"type":"user","uuid":"root","message":{"content":"start"}}`}
-	parent := "root"
-	for i := range 4 {
-		lines = append(lines, fmt.Sprintf(`{"type":"user","uuid":"c%d","parentUuid":%q,"isMeta":true,"origin":{"kind":"channel"},"message":{"content":"<channel source=\"telegram\">question %d</channel>"}}`, i, parent, i), fmt.Sprintf(`{"type":"assistant","uuid":"a%d","parentUuid":"c%d","message":{"content":"answer %d"}}`, i, i, i))
-		parent = fmt.Sprintf("a%d", i)
+func TestClaudeChannelPreviewEnvelopes(t *testing.T) {
+	for _, tt := range []struct{ name, content, preview string }{
+		{"quoted angle", `<channel source="telegram" user="a > b">question</channel>`, "question"},
+		{"no attributes", `<channel>question</channel>`, "question"},
+		{"whitespace", " \n<channel source=\"telegram\">\n question\n</channel>\n ", "question"},
+		{"adjacent", `<channel>first</channel>` + "\n" + `<channel source="telegram">second</channel>`, "first second"},
+		{"malformed", `<channel source="telegram>question</channel>`, `<channel source="telegram>question</channel>`},
+		{"trailing text", `<channel>question</channel> trailing`, `<channel>question</channel> trailing`},
+		{"literal body", `<channel>a < b & c</channel>`, "a < b & c"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			content := fmt.Sprintf(`{"type":"user","uuid":"c1","isMeta":true,"origin":{"kind":"channel"},"message":{"content":%q}}`+"\n", tt.content)
+			session, _ := runClaudeParserTest(t, "preview.jsonl", content)
+			assert.Equal(t, tt.preview, session.FirstMessage)
+		})
 	}
-	lines = append(lines, `{"type":"user","uuid":"retry","parentUuid":"root","message":{"content":"try again"}}`)
-	path := createTestFile(t, "rewind.jsonl", strings.Join(lines, "\n")+"\n")
+}
+
+func TestClaudeChannelRewindKeepsRetryIdentity(t *testing.T) {
+	content, err := os.ReadFile("../testdata/claude_channel_rewind.jsonl")
+	require.NoError(t, err)
+	path := createTestFile(t, "rewind.jsonl", string(content))
 	results, err := parseClaudeSession(path, "project", "local")
 	require.NoError(t, err)
 	require.Len(t, results, 2)

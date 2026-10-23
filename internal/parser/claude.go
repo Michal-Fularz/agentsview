@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"log"
@@ -1132,10 +1133,9 @@ func claudeWorkerMessages(entrypoint, kind string, messages []ParsedMessage) boo
 // already carried by collectClaudeSubagentLinks. Only result-bearing
 // links suppress a late result: a queue/progress mapping for the same
 // tool_use carries no content, so its result still has to be copied
-// here. Hidden isMeta carriers are skipped: the full parser drops those lines
-// entirely, so their result content never reaches the stored tool call
-// there either. Results
-// whose tool_use id is unknown to the store no-op at apply time,
+// here. isMeta carriers remain excluded from tool-result linkage, even when
+// their channel text is visible in the transcript. Results whose tool_use id
+// is unknown to the store no-op at apply time,
 // matching the full parser's unpaired-result behavior.
 func collectClaudeUnmatchedToolResults(
 	entries []dagEntry, agentLinks []ClaudeSubagentLink,
@@ -1165,7 +1165,7 @@ func collectClaudeUnmatchedToolResults(
 			})
 			continue
 		}
-		if e.entryType != "user" || isHiddenClaudeMeta(e.line) {
+		if e.entryType != "user" || gjson.Get(e.line, "isMeta").Bool() {
 			continue
 		}
 		content := gjson.Get(e.line, "message.content")
@@ -1210,7 +1210,7 @@ func collectClaudeSubagentLinks(entries []dagEntry) []ClaudeSubagentLink {
 		if !ok {
 			continue
 		}
-		if isHiddenClaudeMeta(entry.line) {
+		if gjson.Get(entry.line, "isMeta").Bool() {
 			link.ResultContentRaw = ""
 			link.ResultContentLen = 0
 			link.ResultStatus = ""
@@ -3183,10 +3183,8 @@ func firstMessageAndUserCountContext(
 		if firstMsg == "" &&
 			!IsSkippablePreviewCommand(m.Content) {
 			preview := m.Content
-			if m.claudeChannelOrigin && strings.HasPrefix(preview, "<channel ") && strings.HasSuffix(preview, "</channel>") {
-				if _, body, ok := strings.Cut(preview, ">"); ok {
-					preview = strings.TrimSpace(strings.TrimSuffix(body, "</channel>"))
-				}
+			if m.claudeChannelOrigin {
+				preview = claudeChannelPreview(preview)
 			}
 			firstMsg = truncate(
 				strings.ReplaceAll(preview, "\n", " "), 300,
@@ -3194,6 +3192,28 @@ func firstMessageAndUserCountContext(
 		}
 	}
 	return firstMsg, userCount, ctx.Err()
+}
+
+// claudeChannelPreview parses opening tags only: channel bodies are user text,
+// so XML characters in a question must remain literal.
+func claudeChannelPreview(text string) string {
+	remaining := strings.TrimSpace(text)
+	var bodies []string
+	for remaining != "" {
+		decoder := xml.NewDecoder(strings.NewReader(remaining))
+		token, err := decoder.Token()
+		opening, ok := token.(xml.StartElement)
+		if err != nil || !ok || opening.Name.Local != "channel" || opening.Name.Space != "" {
+			return text
+		}
+		body, tail, ok := strings.Cut(remaining[decoder.InputOffset():], "</channel>")
+		if !ok {
+			return text
+		}
+		bodies = append(bodies, strings.TrimSpace(body))
+		remaining = strings.TrimSpace(tail)
+	}
+	return strings.Join(bodies, " ")
 }
 
 func isRealClaudeUserMessage(m ParsedMessage) bool {

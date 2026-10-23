@@ -271,8 +271,8 @@ fixtures retain this field; missing identities remain source-local.
   `promptSource:"system"` carrying a delivery notice. Native parsing
   classifies a prompt that starts with `<cross-session-message` as a system
   row with `source_subtype` `peer_message`, keeping the wrapper so the sender
-  stays visible; `isMeta` user records stay dropped. Task notifications in the
-  same release are `type:"user"` records with
+  stays visible; non-channel `isMeta` user records remain dropped. Task
+  notifications in the same release are `type:"user"` records with
   `origin:{"kind":"task-notification"}` and a `<task-notification>` body,
   which the existing `task_notification` rule already covers. Checked against
   a local transcript corpus; the synthetic fixture
