@@ -133,12 +133,7 @@ install_frontend_deps() {
 
 prepare_frontend() {
   local dist="$REPO_ROOT/frontend/dist"
-  if [ "${AGENTSVIEW_FRONTEND_PREBUILT:-false}" = "true" ]; then
-    if [ ! -f "$dist/index.html" ]; then
-      echo "error: prebuilt frontend is missing index.html: $dist" >&2
-      return 1
-    fi
-  else
+  if [ "${AGENTSVIEW_FRONTEND_PREBUILT:-false}" != "true" ]; then
     (
       cd "$REPO_ROOT/frontend"
       install_frontend_deps

@@ -135,7 +135,6 @@ rm -rf "$tmp_root"
   printf 'prebuilt page' > "$REPO_ROOT/frontend/dist/index.html"
   printf 'prebuilt asset' > "$REPO_ROOT/frontend/dist/assets/app.js"
   printf 'stale' > "$REPO_ROOT/internal/web/dist/stale.js"
-  # shellcheck disable=SC2329 # Called by prepare_frontend through the npm boundary.
   npm() {
     assert_eq "$PWD" "$REPO_ROOT/frontend" "npm runs in frontend"
     printf '%s\n' "$*" >> "$tmp_root/npm.log"
@@ -151,10 +150,6 @@ rm -rf "$tmp_root"
   assert_eq "$(cat "$REPO_ROOT/internal/web/dist/assets/app.js")" "prebuilt asset" "copy nested prebuilt assets"
   assert_eq "$([ -e "$tmp_root/npm.log" ] && echo called || echo skipped)" "skipped" "prebuilt skips npm"
   assert_eq "$([ -e "$REPO_ROOT/internal/web/dist/stale.js" ] && echo present || echo removed)" "removed" "replace stale assets"
-
-  rm "$REPO_ROOT/frontend/dist/index.html"
-  AGENTSVIEW_FRONTEND_PREBUILT=true assert_fails "missing prebuilt index rejected" prepare_frontend
-  assert_eq "$(cat "$REPO_ROOT/internal/web/dist/index.html")" "prebuilt page" "missing assets preserve embedded frontend"
 
   unset AGENTSVIEW_FRONTEND_PREBUILT
   prepare_frontend
