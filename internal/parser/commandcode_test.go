@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -170,6 +171,30 @@ func TestCommandCodeProviderV3Transcript(t *testing.T) {
 	require.Len(t, msgs[2].ToolResults, 1)
 	assert.Equal(t, "call_1", msgs[2].ToolResults[0].ToolUseID)
 	assert.Equal(t, "error: boom", DecodeContent(msgs[2].ToolResults[0].ContentRaw))
+}
+
+func TestCommandCodeProviderMessageTimestamps(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ name, trailingEntry string }{
+		{"rename", `{"type":"session_info","timestamp":"2026-10-15T21:00:00Z","name":"Renamed"}`},
+		{"model change", `{"type":"model_change","timestamp":"2026-10-15T21:00:00Z","model":"model-a"}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			content := `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:00Z"}
+{"type":"message","timestamp":"2026-10-14T21:00:02Z","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+{"type":"message","timestamp":"2026-10-14T21:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi"}]}}
+` + tt.trailingEntry + "\n"
+			result, err := parseCommandCodeFixture(t, content, "")
+			require.NoError(t, err)
+			require.Len(t, result.Messages, 2)
+			assert.Equal(t, time.Date(2026, 10, 14, 21, 0, 2, 0, time.UTC), result.Session.StartedAt)
+			assert.Equal(t, time.Date(2026, 10, 14, 21, 0, 5, 0, time.UTC), result.Session.EndedAt)
+			if tt.name == "rename" {
+				assert.Equal(t, "Renamed", result.Session.SessionName)
+			}
+		})
+	}
 }
 
 func TestCommandCodeProviderModelAndInlineEffort(t *testing.T) {

@@ -80,14 +80,6 @@ func (p *commandCodeProvider) parseSessionContext(
 		}
 
 		ts := parseTimestamp(root.Get("timestamp").Str)
-		if !ts.IsZero() {
-			if startedAt.IsZero() || ts.Before(startedAt) {
-				startedAt = ts
-			}
-			if endedAt.IsZero() || ts.After(endedAt) {
-				endedAt = ts
-			}
-		}
 
 		message := root
 		switch root.Get("type").Str {
@@ -111,6 +103,14 @@ func (p *commandCodeProvider) parseSessionContext(
 			continue
 		case "message":
 			message = root.Get("message")
+		}
+		if !ts.IsZero() {
+			if startedAt.IsZero() || ts.Before(startedAt) {
+				startedAt = ts
+			}
+			if endedAt.IsZero() || ts.After(endedAt) {
+				endedAt = ts
+			}
 		}
 		role := message.Get("role").Str
 		content := message.Get("content")
