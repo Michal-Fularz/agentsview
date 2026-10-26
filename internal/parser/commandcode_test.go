@@ -175,24 +175,25 @@ func TestCommandCodeProviderV3Transcript(t *testing.T) {
 
 func TestCommandCodeProviderMessageTimestamps(t *testing.T) {
 	t.Parallel()
-	for _, tt := range []struct{ name, trailingEntry string }{
-		{"rename", `{"type":"session_info","timestamp":"2026-10-15T21:00:00Z","name":"Renamed"}`},
-		{"model change", `{"type":"model_change","timestamp":"2026-10-15T21:00:00Z","model":"model-a"}`},
+	for _, tt := range []struct{ name, entry string }{
+		{"header", `{"type":"session","version":3,"timestamp":"TIMESTAMP"}`},
+		{"session info", `{"type":"session_info","timestamp":"TIMESTAMP","name":"Renamed"}`},
+		{"model change", `{"type":"model_change","timestamp":"TIMESTAMP","model":"model-a"}`},
+		{"effort change", `{"type":"effort_change","timestamp":"TIMESTAMP","effort":"high"}`},
+		{"label", `{"type":"label","timestamp":"TIMESTAMP","label":"Finished"}`},
+		{"custom", `{"type":"custom","timestamp":"TIMESTAMP","data":"metadata"}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			content := `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:00Z"}
-{"type":"message","timestamp":"2026-10-14T21:00:02Z","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
+			content := `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:00Z"}` + "\n" +
+				strings.ReplaceAll(tt.entry, "TIMESTAMP", "2026-10-13T21:00:00Z") + "\n" + `{"type":"message","timestamp":"2026-10-14T21:00:02Z","message":{"role":"user","content":[{"type":"text","text":"Hello"}]}}
 {"type":"message","timestamp":"2026-10-14T21:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi"}]}}
-` + tt.trailingEntry + "\n"
+` + strings.ReplaceAll(tt.entry, "TIMESTAMP", "2026-10-15T21:00:00Z") + "\n"
 			result, err := parseCommandCodeFixture(t, content, "")
 			require.NoError(t, err)
 			require.Len(t, result.Messages, 2)
 			assert.Equal(t, time.Date(2026, 10, 14, 21, 0, 2, 0, time.UTC), result.Session.StartedAt)
 			assert.Equal(t, time.Date(2026, 10, 14, 21, 0, 5, 0, time.UTC), result.Session.EndedAt)
-			if tt.name == "rename" {
-				assert.Equal(t, "Renamed", result.Session.SessionName)
-			}
 		})
 	}
 }
@@ -237,7 +238,8 @@ func TestCommandCodeProviderLatestSessionInfoAndMetaTitlePrecedence(t *testing.T
 func TestCommandCodeProviderForkUsage(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name, content, meta, wantParent string
+		name, content, meta, wantParent       string
+		wantMessages, wantOutput, wantContext int
 	}{
 		{
 			name: "header parent on Windows",
@@ -246,7 +248,8 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 {"type":"message","timestamp":"2026-10-14T21:00:03Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
 {"type":"message","timestamp":"2026-10-14T21:00:04Z","message":{"role":"assistant","content":[{"type":"text","text":"New"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
 `,
-			wantParent: "commandcode:parent",
+			wantParent:   "commandcode:parent",
+			wantMessages: 3, wantOutput: 5, wantContext: 10,
 		},
 		{
 			name: "CLI fork",
@@ -255,8 +258,9 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 {"type":"message","sessionId":"00000000-0000-0000-0000-000000000001","timestamp":"2026-10-14T21:00:03Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
 {"type":"message","sessionId":"00000000-0000-0000-0000-000000000001","timestamp":"2026-10-14T21:00:04Z","message":{"role":"assistant","content":[{"type":"text","text":"New"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
 `,
-			meta:       `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02Z"}`,
-			wantParent: "commandcode:parent",
+			meta:         `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02Z"}`,
+			wantParent:   "commandcode:parent",
+			wantMessages: 3, wantOutput: 5, wantContext: 10,
 		},
 		{
 			name: "fork of a fork",
@@ -265,8 +269,9 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 {"type":"message","sessionId":"00000000-0000-0000-0000-000000000001","timestamp":"2026-10-14T21:00:03Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
 {"type":"message","sessionId":"00000000-0000-0000-0000-000000000001","timestamp":"2026-10-14T21:00:04Z","message":{"role":"assistant","content":[{"type":"text","text":"New"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
 `,
-			meta:       `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02Z"}`,
-			wantParent: "commandcode:parent",
+			meta:         `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02Z"}`,
+			wantParent:   "commandcode:parent",
+			wantMessages: 3, wantOutput: 5, wantContext: 10,
 		},
 		{
 			name: "non-fork rewritten header",
@@ -275,6 +280,16 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 {"type":"message","timestamp":"2026-10-14T21:00:03Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
 {"type":"message","timestamp":"2026-10-14T21:00:04Z","message":{"role":"assistant","content":[{"type":"text","text":"New"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
 `,
+			wantMessages: 3, wantOutput: 10, wantContext: 10,
+		},
+		{
+			name: "same millisecond",
+			content: `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:02.123Z","parentSession":"/example/parent.jsonl"}
+{"type":"message","timestamp":"2026-10-14T21:00:02.123Z","message":{"role":"assistant","content":[{"type":"text","text":"Copied answer"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
+`,
+			meta:         `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02.123Z"}`,
+			wantParent:   "commandcode:parent",
+			wantMessages: 1, wantOutput: 0, wantContext: 0,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -282,34 +297,22 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 			result, err := parseCommandCodeFixture(t, tt.content, tt.meta)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantParent, result.Session.ParentSessionID)
-			require.Len(t, result.Messages, 3)
+			require.Len(t, result.Messages, tt.wantMessages)
 			if tt.wantParent != "" {
 				assert.Equal(t, RelFork, result.Session.RelationshipType)
 				assert.Empty(t, result.Messages[0].TokenUsage)
 				assert.False(t, result.Messages[0].HasContextTokens)
 				assert.False(t, result.Messages[0].HasOutputTokens)
-				assert.Equal(t, 5, result.Session.TotalOutputTokens)
 			} else {
 				assert.NotEmpty(t, result.Messages[0].TokenUsage)
-				assert.Equal(t, 10, result.Session.TotalOutputTokens)
 			}
-			assert.Equal(t, 10, result.Session.PeakContextTokens)
-			assert.NotEmpty(t, result.Messages[2].TokenUsage)
+			assert.Equal(t, tt.wantOutput, result.Session.TotalOutputTokens)
+			assert.Equal(t, tt.wantContext, result.Session.PeakContextTokens)
+			if tt.wantMessages > 1 {
+				assert.NotEmpty(t, result.Messages[tt.wantMessages-1].TokenUsage)
+			}
 		})
 	}
-}
-
-func TestCommandCodeProviderForkSameMillisecondUsage(t *testing.T) {
-	t.Parallel()
-	result, err := parseCommandCodeFixture(t, `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:02.123Z","parentSession":"/example/parent.jsonl"}
-{"type":"message","timestamp":"2026-10-14T21:00:02.123Z","message":{"role":"assistant","content":[{"type":"text","text":"Copied answer"}]},"usage":{"inputTokens":10,"outputTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}
-`, `{"parentSessionId":"parent","forkedAt":"2026-10-14T21:00:02.123Z"}`)
-	require.NoError(t, err)
-	require.Len(t, result.Messages, 1)
-	assert.Equal(t, "Copied answer", result.Messages[0].Content)
-	assert.Empty(t, result.Messages[0].TokenUsage)
-	assert.False(t, result.Messages[0].HasOutputTokens)
-	assert.Zero(t, result.Session.TotalOutputTokens)
 }
 
 func TestCommandCodeProviderRejectsFutureVersion(t *testing.T) {

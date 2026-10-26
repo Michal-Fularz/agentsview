@@ -104,14 +104,6 @@ func (p *commandCodeProvider) parseSessionContext(
 		case "message":
 			message = root.Get("message")
 		}
-		if !ts.IsZero() {
-			if startedAt.IsZero() || ts.Before(startedAt) {
-				startedAt = ts
-			}
-			if endedAt.IsZero() || ts.After(endedAt) {
-				endedAt = ts
-			}
-		}
 		role := message.Get("role").Str
 		content := message.Get("content")
 		text, thinking, hasThinking, hasToolUse, toolCalls, toolResults := extractCommandCodeContent(content)
@@ -184,6 +176,16 @@ func (p *commandCodeProvider) parseSessionContext(
 				ToolResults:   toolResults,
 			})
 			ordinal++
+		default:
+			continue
+		}
+		if !ts.IsZero() {
+			if startedAt.IsZero() || ts.Before(startedAt) {
+				startedAt = ts
+			}
+			if endedAt.IsZero() || ts.After(endedAt) {
+				endedAt = ts
+			}
 		}
 	}
 

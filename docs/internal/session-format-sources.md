@@ -1,5 +1,5 @@
 ---
-last_edited: 2026-10-07
+last_edited: 2026-10-26
 ---
 
 # Session Format Source Inventory

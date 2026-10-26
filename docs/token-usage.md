@@ -28,9 +28,10 @@ coding yesterday?" — across multiple coding agents from one archive.
 !!! note
 
     Usage totals are populated when the source session includes token metadata for
-    **Claude Code**, **Codex**, **Command Code**, **Copilot CLI**, **OpenCode** and OpenCode-format
-    forks such as **IcodeMate**, **Kilo**, and **MiMoCode**, **Cursor IDE**, **Posit
-    Assistant**, **Pi**, **Prime Agent**, **Gemini**, **Qwen Code**, **OpenClaw**,
+    **Claude Code**, **Codex**, **Command Code**, **Copilot CLI**, **OpenCode** and
+    OpenCode-format forks such as **IcodeMate**, **Kilo**, and **MiMoCode**,
+    **Cursor IDE**, **Posit Assistant**, **Pi**, **Prime Agent**, **Gemini**,
+    **Qwen Code**, **OpenClaw**,
     **QClaw**, **Hermes**, **WorkBuddy**, **Forge**, **Piebald**, **Antigravity
     IDE/CLI**, **Zed**, **VS Code Copilot**, **Visual Studio Copilot**, **Mistral
     Vibe**, **gptme**, **Amp**, **Junie CLI**, **OMO**, and **StepCode**. Coverage
@@ -44,7 +45,7 @@ coding yesterday?" — across multiple coding agents from one archive.
     analytics when their logs do not expose usage. Warp records session-level
     totals, but those totals are not yet folded into the per-message cost report.
 
-Command Code forks count only usage produced at or after the fork.
+Command Code forks count only usage produced after the fork.
 
 Crush contributes recorded session totals and cost, with no per-message token or
 cache breakdown. Its aggregate usage is attributed to the most recent assistant

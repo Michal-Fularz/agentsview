@@ -18,7 +18,7 @@ func TestCommandCodeVersionUpgradeReparsesUnchangedSourceAndClearsSkip(t *testin
 		rawSessionID = "00000000-0000-0000-0000-000000000001"
 		sessionID    = "commandcode:" + rawSessionID
 	)
-	previousVersion := db.CurrentDataVersion() - 1
+	const previousVersion = 148
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "example-project")
 	require.NoError(t, os.MkdirAll(projectDir, 0o755))
@@ -53,7 +53,7 @@ func TestCommandCodeVersionUpgradeReparsesUnchangedSourceAndClearsSkip(t *testin
 	})
 	t.Cleanup(engine.Close)
 	assert.Equal(t, 1, engine.SyncAll(t.Context(), nil).Synced)
-	assert.Equal(t, db.CurrentDataVersion(), reopened.GetSessionDataVersion(t.Context(), sessionID))
+	assert.Equal(t, 149, reopened.GetSessionDataVersion(t.Context(), sessionID))
 }
 
 func TestCommandCodeV2RewriteReplacesMessages(t *testing.T) {
