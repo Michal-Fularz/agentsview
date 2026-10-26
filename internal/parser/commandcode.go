@@ -14,10 +14,12 @@ import (
 )
 
 type commandCodeMeta struct {
-	Title       string `json:"title"`
-	UserRenamed bool   `json:"userRenamed"`
-	ProjectPath string `json:"projectPath"`
-	Cwd         string `json:"cwd"`
+	Title           string `json:"title"`
+	UserRenamed     bool   `json:"userRenamed"`
+	ProjectPath     string `json:"projectPath"`
+	Cwd             string `json:"cwd"`
+	ParentSessionID string `json:"parentSessionId"`
+	ForkedAt        string `json:"forkedAt"`
 }
 
 // parseSessionContext parses a Command Code JSONL transcript.
@@ -37,6 +39,7 @@ func (p *commandCodeProvider) parseSessionContext(
 
 	lr := newLineReader(f, maxLineSize)
 	defer releaseLineReader(lr)
+	meta := loadCommandCodeMeta(path)
 	var (
 		sessionID      string
 		cwd            string
@@ -48,6 +51,11 @@ func (p *commandCodeProvider) parseSessionContext(
 		userCount      int
 		malformedLines int
 		messages       []ParsedMessage
+		version        = "2"
+		sessionName    string
+		parentSession  = meta.ParentSessionID
+		forkTime       = parseTimestamp(meta.ForkedAt)
+		model          string
 	)
 
 	for {
@@ -81,8 +89,31 @@ func (p *commandCodeProvider) parseSessionContext(
 			}
 		}
 
-		role := root.Get("role").Str
-		content := root.Get("content")
+		message := root
+		switch root.Get("type").Str {
+		case "session":
+			version = root.Get("version").String()
+			if root.Get("version").Int() > 3 {
+				return nil, nil, fmt.Errorf("unsupported Command Code session format version %s", version)
+			}
+			if parentSession == "" {
+				parentSession = piPersistedPathSessionID(root.Get("parentSession").Str)
+			}
+			if ts.After(forkTime) {
+				forkTime = ts
+			}
+			continue
+		case "session_info":
+			sessionName = root.Get("name").Str
+			continue
+		case "model_change":
+			model = root.Get("model").Str
+			continue
+		case "message":
+			message = root.Get("message")
+		}
+		role := message.Get("role").Str
+		content := message.Get("content")
 		text, thinking, hasThinking, hasToolUse, toolCalls, toolResults := extractCommandCodeContent(content)
 		text = strings.TrimSpace(text)
 
@@ -116,21 +147,29 @@ func (p *commandCodeProvider) parseSessionContext(
 
 		case "assistant":
 			if text == "" && !hasThinking &&
-				len(toolCalls) == 0 && len(toolResults) == 0 {
+				len(toolCalls) == 0 && len(toolResults) == 0 && !root.Get("usage").Exists() {
 				continue
 			}
-			messages = append(messages, ParsedMessage{
-				Ordinal:       ordinal,
-				Role:          RoleAssistant,
-				Content:       text,
-				ThinkingText:  thinking,
-				Timestamp:     ts,
-				HasThinking:   hasThinking,
-				HasToolUse:    hasToolUse,
-				ContentLength: len(text),
-				ToolCalls:     toolCalls,
-				ToolResults:   toolResults,
-			})
+			pm := ParsedMessage{
+				Ordinal:         ordinal,
+				Role:            RoleAssistant,
+				Content:         text,
+				ThinkingText:    thinking,
+				Timestamp:       ts,
+				HasThinking:     hasThinking,
+				HasToolUse:      hasToolUse,
+				ContentLength:   len(text),
+				ToolCalls:       toolCalls,
+				ToolResults:     toolResults,
+				Model:           commandCodeFirstNonEmpty(root.Get("model").Str, model),
+				ReasoningEffort: root.Get("effort").Str,
+			}
+			// Forks retain their parent's turns and timestamps. Count only
+			// usage produced after the fork.
+			if parentSession == "" || ts.After(forkTime) {
+				applyCommandCodeUsage(&pm, root.Get("usage"))
+			}
+			messages = append(messages, pm)
 			ordinal++
 
 		case "tool":
@@ -155,15 +194,13 @@ func (p *commandCodeProvider) parseSessionContext(
 		return nil, nil, nil
 	}
 
-	meta := loadCommandCodeMeta(path)
-	if meta != nil {
-		if cwd == "" {
-			cwd = commandCodeFirstNonEmpty(meta.Cwd, meta.ProjectPath)
-		}
-		if firstMessage == "" {
-			firstMessage = meta.Title
-		}
+	if cwd == "" {
+		cwd = commandCodeFirstNonEmpty(meta.Cwd, meta.ProjectPath)
 	}
+	if firstMessage == "" {
+		firstMessage = meta.Title
+	}
+	sessionName = commandCodeFirstNonEmpty(sessionName, meta.Title)
 	if sessionID == "" {
 		sessionID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	}
@@ -173,11 +210,6 @@ func (p *commandCodeProvider) parseSessionContext(
 		project = NormalizeName(filepath.Base(filepath.Dir(path)))
 	}
 
-	sessionName := ""
-	if meta != nil {
-		sessionName = meta.Title
-	}
-
 	sess := &ParsedSession{
 		ID:               "commandcode:" + sessionID,
 		Project:          project,
@@ -185,7 +217,7 @@ func (p *commandCodeProvider) parseSessionContext(
 		Agent:            AgentCommandCode,
 		Cwd:              cwd,
 		GitBranch:        gitBranch,
-		SourceVersion:    "2",
+		SourceVersion:    version,
 		MalformedLines:   malformedLines,
 		FirstMessage:     firstMessage,
 		SessionName:      sessionName,
@@ -199,20 +231,42 @@ func (p *commandCodeProvider) parseSessionContext(
 			Mtime: info.ModTime().UnixNano(),
 		},
 	}
+	if parentSession != "" {
+		sess.ParentSessionID = "commandcode:" + parentSession
+		sess.RelationshipType = RelFork
+	}
+	accumulateMessageTokenUsage(sess, messages)
 	return sess, messages, nil
 }
 
-func loadCommandCodeMeta(path string) *commandCodeMeta {
+func applyCommandCodeUsage(pm *ParsedMessage, usage gjson.Result) {
+	if !usage.Exists() {
+		return
+	}
+	input := usage.Get("inputTokens")
+	output := usage.Get("outputTokens")
+	read := usage.Get("cacheReadTokens")
+	write := usage.Get("cacheWriteTokens")
+	write1h := usage.Get("cacheWriteTokens1h").Int()
+	uncached := max(input.Int()-read.Int()-write.Int(), 0)
+	pm.TokenUsage = []byte(fmt.Sprintf(`{"input_tokens":%d,"output_tokens":%d,"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"cache_creation":{"ephemeral_1h_input_tokens":%d}}`, uncached, output.Int(), read.Int(), write.Int(), write1h))
+	pm.OutputTokens = int(output.Int())
+	pm.HasOutputTokens = output.Exists()
+	pm.ContextTokens = int(uncached + read.Int() + write.Int())
+	pm.HasContextTokens = input.Exists() || read.Exists() || write.Exists()
+}
+
+func loadCommandCodeMeta(path string) commandCodeMeta {
 	metaPath := strings.TrimSuffix(path, ".jsonl") + ".meta.json"
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
-		return nil
+		return commandCodeMeta{}
 	}
 	var meta commandCodeMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return nil
+		return commandCodeMeta{}
 	}
-	return &meta
+	return meta
 }
 
 func commandCodeCwd(root gjson.Result) string {
