@@ -203,7 +203,7 @@ func (p *commandCodeProvider) parseSessionContext(
 		firstMessage = meta.Title
 	}
 	sessionName = commandCodeFirstNonEmpty(sessionName, meta.Title)
-	if sessionID == "" {
+	if sessionID == "" || version == "3" {
 		sessionID = strings.TrimSuffix(filepath.Base(path), ".jsonl")
 	}
 

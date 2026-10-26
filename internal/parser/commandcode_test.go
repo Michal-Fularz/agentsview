@@ -173,6 +173,41 @@ func TestCommandCodeProviderV3Transcript(t *testing.T) {
 	assert.Equal(t, "error: boom", DecodeContent(msgs[2].ToolResults[0].ContentRaw))
 }
 
+func TestCommandCodeProviderV3UIForkOfCLIFork(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// forkSession copies the original header and stamps every line with the
+	// CLI fork's sessionId. createBranchedSession writes a new header but keeps
+	// that sessionId on the copied entries.
+	copied := `{"type":"message","id":"m1","parentId":null,"timestamp":"2026-10-14T21:00:01Z","sessionId":"00000000-0000-0000-0000-000000000002","message":{"role":"assistant","content":[{"type":"text","text":"Parent answer"}]},"usage":{"outputTokens":10}}` + "\n"
+	cliFork := `{"type":"session","version":3,"id":"00000000-0000-0000-0000-000000000001","sessionId":"00000000-0000-0000-0000-000000000002","timestamp":"2026-10-14T21:00:00Z","cwd":"/example/project"}` + "\n" + copied
+	uiFork := `{"type":"session","version":3,"id":"00000000-0000-0000-0000-000000000003","timestamp":"2026-10-14T21:00:02Z","cwd":"/example/project","parentSession":"/example/sessions/00000000-0000-0000-0000-000000000002.jsonl"}` + "\n" + copied + `{"type":"message","id":"m2","parentId":"m1","timestamp":"2026-10-14T21:00:03Z","message":{"role":"assistant","content":[{"type":"text","text":"Child answer"}]},"usage":{"outputTokens":20}}` + "\n"
+	provider, ok := NewProvider(AgentCommandCode, ProviderConfig{Roots: []string{root}})
+	require.True(t, ok)
+	for _, tt := range []struct {
+		id, content, parent string
+		messages, output    int
+	}{
+		{"00000000-0000-0000-0000-000000000002", cliFork, "00000000-0000-0000-0000-000000000001", 1, 0},
+		{"00000000-0000-0000-0000-000000000003", uiFork, "00000000-0000-0000-0000-000000000002", 2, 20},
+	} {
+		path := filepath.Join(root, "project", tt.id+".jsonl")
+		writeSourceFile(t, path, tt.content)
+		writeSourceFile(t, strings.TrimSuffix(path, ".jsonl")+".meta.json", `{"parentSessionId":"`+tt.parent+`","forkedAt":"2026-10-14T21:00:02Z"}`)
+		source, found, err := provider.FindSource(t.Context(), FindSourceRequest{RawSessionID: tt.id})
+		require.NoError(t, err)
+		require.True(t, found)
+		outcome, err := provider.Parse(t.Context(), ParseRequest{Source: source})
+		require.NoError(t, err)
+		require.Len(t, outcome.Results, 1)
+		result := outcome.Results[0].Result
+		assert.Equal(t, "commandcode:"+tt.id, result.Session.ID)
+		assert.Equal(t, "commandcode:"+tt.parent, result.Session.ParentSessionID)
+		assert.Len(t, result.Messages, tt.messages)
+		assert.Equal(t, tt.output, result.Session.TotalOutputTokens)
+	}
+}
+
 func TestCommandCodeProviderMessageTimestamps(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct{ name, entry string }{
