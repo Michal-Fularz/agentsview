@@ -200,6 +200,7 @@ func TestCommandCodeProviderLatestSessionInfoAndMetaTitlePrecedence(t *testing.T
 `, "Sidecar"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			content := `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:00Z","cwd":"/example/project"}` + "\n" + `{"type":"message","timestamp":"2026-10-14T21:00:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Hello"}]}}` + "\n" + tt.entries
 			result, err := parseCommandCodeFixture(t, content, `{"title":"Sidecar"}`)
 			require.NoError(t, err)
@@ -252,6 +253,7 @@ func TestCommandCodeProviderForkUsage(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := parseCommandCodeFixture(t, tt.content, tt.meta)
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantParent, result.Session.ParentSessionID)
