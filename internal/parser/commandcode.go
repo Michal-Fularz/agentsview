@@ -138,8 +138,11 @@ func (p *commandCodeProvider) parseSessionContext(
 			}
 
 		case "assistant":
+			// Forks retain their parent's turns and timestamps. Count only
+			// usage produced after the fork.
+			hasUsage := root.Get("usage").Exists() && (parentSession == "" || ts.After(forkTime))
 			if text == "" && !hasThinking &&
-				len(toolCalls) == 0 && len(toolResults) == 0 && !root.Get("usage").Exists() {
+				len(toolCalls) == 0 && len(toolResults) == 0 && !hasUsage {
 				continue
 			}
 			pm := ParsedMessage{
@@ -156,9 +159,7 @@ func (p *commandCodeProvider) parseSessionContext(
 				Model:           commandCodeFirstNonEmpty(root.Get("model").Str, model),
 				ReasoningEffort: root.Get("effort").Str,
 			}
-			// Forks retain their parent's turns and timestamps. Count only
-			// usage produced after the fork.
-			if parentSession == "" || ts.After(forkTime) {
+			if hasUsage {
 				applyCommandCodeUsage(&pm, root.Get("usage"))
 			}
 			messages = append(messages, pm)

@@ -358,6 +358,23 @@ func TestCommandCodeProviderRejectsFutureVersion(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported Command Code session format version 4")
 }
 
+func TestCommandCodeProviderForkCopiedEmptyUsageTurn(t *testing.T) {
+	t.Parallel()
+	for _, timestamp := range []string{"2026-10-14T21:00:01Z", "2026-10-14T21:00:02Z"} {
+		t.Run(timestamp, func(t *testing.T) {
+			t.Parallel()
+			result, err := parseCommandCodeFixture(t, `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:02Z","parentSession":"/example/parent.jsonl"}
+{"type":"message","timestamp":"`+timestamp+`","message":{"role":"assistant","content":[]},"usage":{"inputTokens":10,"outputTokens":5}}
+{"type":"message","timestamp":"2026-10-14T21:00:03Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
+`, "")
+			require.NoError(t, err)
+			require.Len(t, result.Messages, 1)
+			assert.Equal(t, "Continue", result.Messages[0].Content)
+			assert.Equal(t, 1, result.Session.MessageCount)
+		})
+	}
+}
+
 func TestCommandCodeProviderUsageWithoutContent(t *testing.T) {
 	t.Parallel()
 	result, err := parseCommandCodeFixture(t, `{"type":"session","version":3,"timestamp":"2026-10-14T21:00:00Z"}
