@@ -780,12 +780,6 @@ func TestTruncateLogFileUnderLimit(t *testing.T) {
 	assert.Equal(t, string(content), string(data), "content changed")
 }
 
-func TestTruncateLogFileMissing(t *testing.T) {
-	// Non-existent file: should not panic.
-	missing := filepath.Join(t.TempDir(), "missing", "log.txt")
-	truncateLogFile(missing, 1024)
-}
-
 func TestTruncateLogFileSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "real.log")
@@ -3899,4 +3893,26 @@ func TestCollectWatchRootsWatchesAliasHomeIndexes(t *testing.T) {
 	aliasRoot, ok := findCollectedWatchRoot(roots, alias)
 	require.True(t, ok, "the alias home must be watched for session_index.jsonl")
 	assert.False(t, aliasRoot.recursive)
+}
+
+func TestNoSyncRebuildNotice(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		noSync, archiveOnly, needsSync bool
+		want                           bool
+	}{
+		{"no-sync with stale archive", true, false, true, true},
+		{"no-sync with current archive", true, false, false, false},
+		{"syncing daemon rebuilds at startup", false, false, true, false},
+		{"archive-only rebuilds at startup", true, true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			notice := noSyncRebuildNotice(tc.noSync, tc.archiveOnly, tc.needsSync)
+			if tc.want {
+				assert.Contains(t, notice, "Click Sync")
+			} else {
+				assert.Empty(t, notice)
+			}
+		})
+	}
 }

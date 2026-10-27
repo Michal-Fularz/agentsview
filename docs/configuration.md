@@ -29,6 +29,7 @@ AgentsView stores all persistent data under a single directory, defaulting to
 ├── debug.log        # Log of the server, sync, and other commands
 ├── run/             # Windows only: daemon runtime records and locks
 ├── serve.log        # Detached daemon output
+├── tmp/             # Temporary files, only when the system temp directory is unusable
 └── uploads/         # Uploaded session files
 ```
 
@@ -38,6 +39,14 @@ rebuilds it automatically. Back up `sessions.db` for session history, `assets/`
 for images stored outside SQLite, `config.toml` for settings, and
 `telemetry-install-id` for installation identity. Keep the database and assets
 together when restoring or moving the archive.
+
+SQLite needs a writable temp directory for session writes and large sorts.
+AgentsView uses the system temp directory: `TMP` or `TEMP` on Windows, and
+`TMPDIR` elsewhere. If that directory cannot be written, for example inside a
+sandbox that confines child processes, AgentsView prints a warning and uses
+`tmp/` inside the data directory instead. Its child processes inherit the same
+choice. To use a different directory, point those variables at a writable
+directory before you start AgentsView.
 
 The desktop app and CLI share a detached local daemon for fresh reads and
 writes. A running daemon owns local SQLite writes for this data directory and
@@ -329,8 +338,18 @@ mode instead.
 | `AGENTSVIEW_AUTH_TOKEN_FILE`         | File holding the bearer token; overrides `auth_token` in `config.toml`. `~/` expands to the home directory. Cannot be combined with `AGENTSVIEW_AUTH_TOKEN`                                 |
 | `AGENTSVIEW_PG_ALLOW_INSECURE`       | Sets `allow_insecure` for the default PostgreSQL target, for a database on a private network without TLS                                                                                    |
 | `AGENTSVIEW_EMBEDDINGS_ENDPOINT`     | OpenAI-compatible embeddings endpoint for recipe adoption in `pg push --embed` and `pg serve`; local `serve` ignores it. See [semantic search on PostgreSQL](/docs/semantic-search/)        |
+| `AGENTSVIEW_EMBEDDINGS_API_KEY`      | Inline API key for that endpoint; requires `AGENTSVIEW_EMBEDDINGS_ENDPOINT` and cannot be combined with the file form                                                                        |
 | `AGENTSVIEW_EMBEDDINGS_API_KEY_FILE` | File holding that endpoint's API key; requires `AGENTSVIEW_EMBEDDINGS_ENDPOINT`                                                                                                             |
 | `AGENTSVIEW_EMBEDDINGS_BATCH_SIZE`   | Inputs per embeddings request; positive integer, default `32`; requires `AGENTSVIEW_EMBEDDINGS_ENDPOINT`. Lower it for providers with request token limits.                                 |
+
+Anyone who can inspect the container can read `AGENTSVIEW_EMBEDDINGS_API_KEY`,
+and every process AgentsView starts, such as an agent CLI, inherits it. Use
+`AGENTSVIEW_EMBEDDINGS_API_KEY_FILE` to keep the key out of the environment.
+Unlike `AGENTSVIEW_AUTH_TOKEN`, an empty `AGENTSVIEW_EMBEDDINGS_API_KEY` still
+counts as set: it stops startup on its own or next to the file form, so unset
+the form you don't use. Because the name belongs to the deployment server, a
+`[vector]` server can't read its key from it; startup stops while it is set, so
+give that server's `api_key_env` a different name.
 
 The image sets `AGENTSVIEW_MODE=serve`, `AGENTSVIEW_HOST=0.0.0.0`,
 `AGENTSVIEW_REQUIRE_AUTH=true`, and `AGENTSVIEW_NO_BROWSER=true`. An explicit
@@ -349,8 +368,9 @@ These rules fail closed:
   `strconv.ParseBool` accepts. Any other value, an unknown `AGENTSVIEW_MODE`, or
   a blank `AGENTSVIEW_HOST` stops startup with an error naming the variable.
 - A missing, unreadable, or empty `AGENTSVIEW_AUTH_TOKEN_FILE` or
-  `AGENTSVIEW_EMBEDDINGS_API_KEY_FILE` stops startup. AgentsView never falls
-  back to another secret source.
+  `AGENTSVIEW_EMBEDDINGS_API_KEY_FILE` stops startup. A blank
+  `AGENTSVIEW_EMBEDDINGS_API_KEY`, or setting both API-key forms, also stops
+  startup. AgentsView never falls back to another secret source.
 - Any `AGENTSVIEW_EMBEDDINGS_*` variable together with a `[vector]` section
   stops startup, so one place owns the embedding recipe.
 
@@ -2027,6 +2047,9 @@ transcript a second time.
 ```toml
 [friction]
 enabled = true
+backfill_days = 7
+timezone = "" # Local time on SQLite, UTC on PostgreSQL; or an IANA zone.
+seat_patterns = [] # Optional path globs with one whole-segment {seat} capture.
 ```
 
 Restart the daemon after changing this setting. When enabled:
@@ -2044,6 +2067,34 @@ Restart the daemon after changing this setting. When enabled:
   restored archive-only database. Its sessions are reviewed before a
   PostgreSQL push. A `--no-sync` daemon also catches up after it restarts with
   automatic sync.
+
+An hourly job builds one stored digest per completed local day, catching up
+within `backfill_days` (1–3650, default 7). It never builds today. Set
+`AGENTSVIEW_FRICTION_TZ` to override the configured timezone. Seat patterns label
+digest findings from session paths without changing the stored detections.
+
+Digests keep Markdown, schema 1 summary JSON, frozen findings and usage,
+session membership, and pattern recurrence. SQLite keeps this state through a
+full resync when the archive retains transcript text. Usage-only SQLite archives
+do not build or update digests. PostgreSQL builds its own digests from pushed
+findings when its serving role can write the review tables. Read APIs and CLI
+commands arrive in a later slice; this change stores the digests but does not
+expose a digest page.
+
+Local days wait until their sessions have current findings; the wait does not
+expire. Other completed days can build while review catches up. PostgreSQL uses
+the findings pushed by each source, including other rules versions, and skips
+sessions whose source has not enabled review. Sessions over the review budget
+are excluded immediately.
+
+Catch-up fills missing dates throughout `backfill_days`, including empty days,
+and revisits dates with unrecorded sessions inside that window, so late
+syncs and pushes update an existing digest. A session belongs to only one digest
+even if it resumes later, and rebuilding does not count its patterns twice.
+Sessions that arrive or finish review outside the window require a larger
+`backfill_days` setting. Each daily build holds the sync lock only for that day.
+PostgreSQL defaults to UTC; configure the same timezone on every process serving
+the same hub.
 
 Hosted raw sync reviews sessions as it projects them, whatever this setting
 says. See [Hosted Raw Sync](/docs/hosted-raw-sync/).
@@ -2378,6 +2429,8 @@ text, paths, and identifiers stay out of outcome properties.
 Every event contains only:
 
 - app version and git commit
+- the distribution that built the binary, such as `homebrew` for Homebrew or
+  `kenn` for official downloads; empty for source builds
 - operating system and CPU architecture
 - the application-owned installation ID stored in
   `~/.agentsview/telemetry-install-id`
@@ -2391,8 +2444,11 @@ information, or hostname, and the events are sent with person-profile processing
 and GeoIP lookup disabled. The ping runs in the background and never blocks
 startup or operation.
 
-Only release builds send telemetry, and it stays off in CI. Disable it with an
-environment variable, then restart the server:
+A build sends telemetry only when it has the PostHog project key and a release
+version such as `0.33.0`. Release builds and the `make` build targets set the key
+at link time. Plain `go build` and `go test` binaries have no key and send
+nothing. Telemetry also stays off in CI. Disable it with an environment
+variable, then restart the server:
 
 ```bash
 export AGENTSVIEW_TELEMETRY_ENABLED=0  # or DO_NOT_TRACK=1

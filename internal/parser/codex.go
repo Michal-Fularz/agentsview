@@ -457,6 +457,11 @@ func (b *codexSessionBuilder) handleSessionMeta(
 	if b.parentSessionID != "" {
 		b.parentSessionID = codexSubagentSessionID(b.parentSessionID)
 		b.relationshipType = RelSubagent
+	} else if b.forkedFromID != "" {
+		// An ordinary fork names the thread it was forked from. Revert pages
+		// replace this with their continuation parent after parsing.
+		b.parentSessionID = codexSubagentSessionID(b.forkedFromID)
+		b.relationshipType = RelFork
 	}
 	if payload.Get("originator").Str == codexOriginatorExec && b.sessionKind != SessionKindRoborev {
 		b.sessionKind = SessionKindNonInteractive
@@ -545,6 +550,7 @@ func (b *codexSessionBuilder) handleResponseItem(ctx context.Context,
 	msg := ParsedMessage{
 		Role:          RoleType(role),
 		Content:       content,
+		DialogueText:  new(content),
 		Timestamp:     ts,
 		ContentLength: len(content),
 		Model:         b.model,
@@ -576,6 +582,7 @@ func (b *codexSessionBuilder) handleAgentMessage(
 	b.sink.AppendMessage(ParsedMessage{
 		Role:          RoleUser,
 		Content:       content,
+		DialogueText:  new(content),
 		Timestamp:     ts,
 		ContentLength: len(content),
 		Model:         b.model,
@@ -770,6 +777,7 @@ func (b *codexSessionBuilder) handleFunctionCall(
 	messageOrdinal := b.sink.AppendMessage(ParsedMessage{
 		Role:            RoleAssistant,
 		Content:         content,
+		DialogueText:    new(""),
 		Timestamp:       ts,
 		HasToolUse:      true,
 		ContentLength:   len(content),
@@ -997,6 +1005,7 @@ func (b *codexSessionBuilder) flushPendingAgentResultsContext(
 					Ordinal:       ev.ordinal,
 					Role:          RoleUser,
 					Content:       ev.text,
+					DialogueText:  new(""),
 					SourceSubtype: SourceSubtypeToolResult,
 					Timestamp:     ev.timestamp,
 					Model:         b.model,

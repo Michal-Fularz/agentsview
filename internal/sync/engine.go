@@ -3766,6 +3766,24 @@ func (e *Engine) resyncBuildLocked(
 			time.Since(tInsights).Round(time.Millisecond),
 		)
 	}
+	// Digest snapshots and Markdown may contain transcript text. Preserve
+	// them only when the rebuilt archive stores that content.
+	if copyDerivedText {
+		if err := newDB.CopyFrictionStateFrom(origPath); err != nil {
+			log.Printf("resync: copy friction state: %v", err)
+			stats.Aborted = true
+			stats.Warnings = append(stats.Warnings,
+				"friction state copy failed, aborting swap: "+err.Error(),
+			)
+			newDB.Close()
+			removeTempDB(tempPath)
+			restoreSkipCache()
+			e.mu.Lock()
+			e.lastSyncStats = stats
+			e.mu.Unlock()
+			return stats, err
+		}
+	}
 
 	// Copy model pricing so usage costs survive the swap. The
 	// startup seed only runs once per daemon lifetime, so a
@@ -19885,7 +19903,10 @@ func shouldReplaceFullParseMessages(
 		// ResultEvents. An incremental append would leave
 		// existing tool calls without their results.
 		pw.sess.Agent == parser.AgentPoolside ||
-		pw.sess.Agent == parser.AgentReasonix
+		pw.sess.Agent == parser.AgentReasonix ||
+		// Resuming Command Code v2 rewrites it as v3 and merges tool/user
+		// turns. Ordinals shrink, so appending would lose new turns.
+		pw.sess.Agent == parser.AgentCommandCode
 }
 
 // writeIncremental appends new messages and partially updates
